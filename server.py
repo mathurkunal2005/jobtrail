@@ -3,6 +3,7 @@ import shutil
 from datetime import datetime
 from mcp.server.mcpserver import MCPServer
 from db import get_connection, init_db, log_action, RESUMES_DIR
+from gmail_helper import fetch_recent_emails
 
 # Create the server, give it a name
 mcp = MCPServer("jobtrail")
@@ -109,7 +110,6 @@ def save_resume(company: str, role: str, source_file_path: str) -> str:
     if not os.path.isfile(source_file_path):
         return f"File not found: {source_file_path}"
 
-    # Build a clean destination filename, e.g. "Google_SDE.pdf"
     ext = os.path.splitext(source_file_path)[1] or ".pdf"
     safe_company = company.replace(" ", "_")
     safe_role = role.replace(" ", "_")
@@ -149,6 +149,36 @@ def get_resume(company: str, role: str) -> str:
         return f"No resume found for {company} — {role}."
 
     return f"Resume for {company} — {role}: {row['file_path']} (uploaded {row['uploaded_at']})"
+
+@mcp.tool()
+def search_gmail_applications(query: str, max_results: int) -> str:
+    """
+    Searches Gmail for emails that might be related to job applications
+    (using Gmail's own search syntax) and returns their subject, sender,
+    date, and a short preview of each match. Read-only — does not modify
+    or send any email.
+
+    After reviewing the results, use add_application or update_status to
+    record anything relevant — those still require your approval.
+    """
+    try:
+        emails = fetch_recent_emails(query, max_results)
+    except FileNotFoundError:
+        return "Gmail credentials not found. Make sure credentials.json is in the project folder."
+
+    if not emails:
+        return "No matching emails found."
+
+    lines = []
+    for e in emails:
+        lines.append(
+            f"From: {e['from']}\n"
+            f"Subject: {e['subject']}\n"
+            f"Date: {e['date']}\n"
+            f"Preview: {e['snippet']}\n"
+            f"---"
+        )
+    return "\n".join(lines)
 
 # This runs the server when we execute this file directly
 if __name__ == "__main__":

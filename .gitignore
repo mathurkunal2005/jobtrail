@@ -219,3 +219,5 @@ __marimo__/
 .DS_Store
 *.db
 resumes/
+credentials.json
+token.json
