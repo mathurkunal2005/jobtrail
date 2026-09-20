@@ -179,6 +179,79 @@ def search_gmail_applications(query: str, max_results: int) -> str:
             f"---"
         )
     return "\n".join(lines)
+@mcp.tool()
+def get_stats() -> str:
+    """
+    Shows summary statistics across all tracked applications:
+    counts by status, and overall response rate.
+    """
+    conn = get_connection()
+    rows = conn.execute("SELECT status FROM applications").fetchall()
+    conn.close()
+
+    total = len(rows)
+    if total == 0:
+        return "No applications tracked yet."
+
+    counts = {}
+    for row in rows:
+        status = row["status"]
+        counts[status] = counts.get(status, 0) + 1
+
+    # "Applied" with no further movement counts as awaiting response;
+    # everything else (Interview, Offer, Rejected, Withdrawn, etc.) counts as a response.
+    awaiting = counts.get("Applied", 0)
+    responded = total - awaiting
+    response_rate = (responded / total) * 100
+
+    lines = [f"Total applications: {total}", ""]
+    lines.append("By status:")
+    for status, count in sorted(counts.items(), key=lambda x: -x[1]):
+        lines.append(f"  {status}: {count}")
+    lines.append("")
+    lines.append(f"Response rate: {response_rate:.0f}% ({responded}/{total} moved past 'Applied')")
+
+    return "\n".join(lines)
+
+@mcp.tool()
+def get_pending_followups(days_threshold: int) -> str:
+    """
+    Lists applications still in 'Applied' status with no update for at least
+    days_threshold days — candidates for a follow-up email.
+    """
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM applications WHERE status = 'Applied' ORDER BY date_applied"
+    ).fetchall()
+    conn.close()
+
+    if not rows:
+        return "No applications are currently awaiting a response."
+
+    today = datetime.now().date()
+    overdue = []
+
+    for row in rows:
+        try:
+            applied_date = datetime.strptime(row["date_applied"], "%Y-%m-%d").date()
+        except ValueError:
+            continue  # skip rows with an unexpected date format
+
+        days_waiting = (today - applied_date).days
+        if days_waiting >= days_threshold:
+            overdue.append((row, days_waiting))
+
+    if not overdue:
+        return f"No applications have been waiting {days_threshold}+ days."
+
+    lines = [f"Applications waiting {days_threshold}+ days with no update:", ""]
+    for row, days_waiting in overdue:
+        lines.append(
+            f"#{row['id']} — {row['company']} ({row['role']}): "
+            f"applied {row['date_applied']}, {days_waiting} days ago"
+        )
+
+    return "\n".join(lines)
 
 # This runs the server when we execute this file directly
 if __name__ == "__main__":
