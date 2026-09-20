@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 # so it works correctly no matter what directory the server is launched from.
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "jobtrail.db")
+RESUMES_DIR = os.path.join(BASE_DIR, "resumes")
 
 def get_connection():
     """Opens a connection to our SQLite database file."""
@@ -14,7 +15,7 @@ def get_connection():
     return conn
 
 def init_db():
-    """Creates the applications and audit_log tables if they don't already exist."""
+    """Creates all tables if they don't already exist, and the resumes folder."""
     conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS applications (
@@ -33,8 +34,20 @@ def init_db():
             details TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS resumes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company TEXT NOT NULL,
+            role TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL,
+            UNIQUE(company, role)
+        )
+    """)
     conn.commit()
     conn.close()
+
+    os.makedirs(RESUMES_DIR, exist_ok=True)
 
 def log_action(action: str, details: str):
     """Records one approved write action into the audit log."""
