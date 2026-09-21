@@ -253,6 +253,59 @@ def get_pending_followups(days_threshold: int) -> str:
 
     return "\n".join(lines)
 
+@mcp.tool()
+def save_resume_tex(label: str, latex_source: str) -> str:
+    """
+    Saves a named LaTeX resume variant (e.g. "master", "Google_SDE").
+    If a variant with this label already exists, it gets overwritten with
+    the new content — its previous version is not kept.
+    Use this to store your base resume, and later to save a tailored
+    version after editing it for a specific job.
+    """
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    conn.execute("""
+        INSERT INTO resume_variants (label, latex_source, created_at, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(label) DO UPDATE SET
+            latex_source = excluded.latex_source,
+            updated_at = excluded.updated_at
+    """, (label, latex_source, now, now))
+    conn.commit()
+    conn.close()
+
+    log_action("save_resume_tex", f"Saved resume variant '{label}' ({len(latex_source)} chars)")
+
+    return f"Saved resume variant '{label}'."
+
+@mcp.tool()
+def list_resume_variants() -> str:
+    """Lists all saved LaTeX resume variants by label, with when each was last updated."""
+    conn = get_connection()
+    rows = conn.execute("SELECT label, updated_at FROM resume_variants ORDER BY updated_at DESC").fetchall()
+    conn.close()
+
+    if not rows:
+        return "No resume variants saved yet."
+
+    lines = [f"{row['label']} (updated {row['updated_at']})" for row in rows]
+    return "\n".join(lines)
+
+@mcp.tool()
+def get_resume_tex(label: str) -> str:
+    """
+    Retrieves the full LaTeX source of a saved resume variant by its label.
+    Use this to pull up your base resume before tailoring it for a job description.
+    """
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM resume_variants WHERE label = ?", (label,)).fetchone()
+    conn.close()
+
+    if row is None:
+        return f"No resume variant found with label '{label}'."
+
+    return row["latex_source"]
+
 # This runs the server when we execute this file directly
 if __name__ == "__main__":
     mcp.run()

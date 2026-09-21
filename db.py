@@ -44,6 +44,15 @@ def init_db():
             UNIQUE(company, role)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS resume_variants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            label TEXT NOT NULL UNIQUE,
+            latex_source TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
