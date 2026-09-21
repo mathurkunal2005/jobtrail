@@ -4,6 +4,7 @@ from datetime import datetime
 from mcp.server.mcpserver import MCPServer
 from db import get_connection, init_db, log_action, RESUMES_DIR
 from gmail_helper import fetch_recent_emails
+from github_helper import get_user_repo_summary, get_org_tech_stack_summary
 
 # Create the server, give it a name
 mcp = MCPServer("jobtrail")
@@ -78,7 +79,6 @@ def update_status(id: int, new_status: str) -> str:
     """Updates the status of an existing application by its id number."""
     conn = get_connection()
 
-    # First check it actually exists, so we can give a clear error otherwise
     row = conn.execute("SELECT * FROM applications WHERE id = ?", (id,)).fetchone()
     if row is None:
         conn.close()
@@ -179,6 +179,7 @@ def search_gmail_applications(query: str, max_results: int) -> str:
             f"---"
         )
     return "\n".join(lines)
+
 @mcp.tool()
 def get_stats() -> str:
     """
@@ -198,8 +199,6 @@ def get_stats() -> str:
         status = row["status"]
         counts[status] = counts.get(status, 0) + 1
 
-    # "Applied" with no further movement counts as awaiting response;
-    # everything else (Interview, Offer, Rejected, Withdrawn, etc.) counts as a response.
     awaiting = counts.get("Applied", 0)
     responded = total - awaiting
     response_rate = (responded / total) * 100
@@ -235,7 +234,7 @@ def get_pending_followups(days_threshold: int) -> str:
         try:
             applied_date = datetime.strptime(row["date_applied"], "%Y-%m-%d").date()
         except ValueError:
-            continue  # skip rows with an unexpected date format
+            continue
 
         days_waiting = (today - applied_date).days
         if days_waiting >= days_threshold:
@@ -305,6 +304,51 @@ def get_resume_tex(label: str) -> str:
         return f"No resume variant found with label '{label}'."
 
     return row["latex_source"]
+
+@mcp.tool()
+def get_my_github_projects(username: str, max_repos: int) -> str:
+    """
+    Fetches a summary of your public GitHub repositories (name, description,
+    primary language, stars, last updated) to help keep resume project
+    bullets current. Forked repos are excluded.
+    """
+    try:
+        repos = get_user_repo_summary(username, max_repos)
+    except Exception as e:
+        return f"Couldn't fetch GitHub repos: {e}"
+
+    if not repos:
+        return f"No public repos found for {username}."
+
+    lines = []
+    for r in repos:
+        lines.append(
+            f"{r['name']} ({r['language']}, {r['stars']}★) — updated {r['updated_at']}\n"
+            f"  {r['description']}\n"
+            f"  {r['url']}"
+        )
+    return "\n".join(lines)
+
+@mcp.tool()
+def analyze_company_tech_stack(github_org: str, max_repos: int) -> str:
+    """
+    Analyzes a company's public GitHub organization to summarize their
+    dominant programming languages across their repos — useful context
+    when tailoring a resume for a role at that company.
+    """
+    try:
+        result = get_org_tech_stack_summary(github_org, max_repos)
+    except Exception as e:
+        return f"Couldn't fetch GitHub org data: {e}"
+
+    if result["repos_analyzed"] == 0:
+        return f"No public repos found for organization '{github_org}'."
+
+    lines = [f"Analyzed {result['repos_analyzed']} public repos from '{github_org}':", ""]
+    for lang, count in sorted(result["language_counts"].items(), key=lambda x: -x[1]):
+        lines.append(f"  {lang}: {count}")
+
+    return "\n".join(lines)
 
 # This runs the server when we execute this file directly
 if __name__ == "__main__":
